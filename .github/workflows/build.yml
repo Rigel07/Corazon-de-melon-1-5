@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Descomprimir el zip y ordenar los archivos
         id: prep
@@ -25,7 +27,13 @@ jobs:
           # 1) Si no hay build.gradle en la raiz, el proyecto viene dentro de un .zip subido tal cual: se descomprime aqui.
           DIR="."
           if [ ! -f build.gradle ]; then
-            ZIP=$(ls -t *.zip 2>/dev/null | head -n 1 || true)
+            ZIP=""; BEST=-1
+            for z in *.zip; do
+              [ -f "$z" ] || continue
+              t=$(git log -1 --format=%ct -- "$z" 2>/dev/null || true)
+              [ -n "$t" ] || t=0
+              if [ "$t" -ge "$BEST" ]; then BEST=$t; ZIP="$z"; fi
+            done
             if [ -z "$ZIP" ]; then
               echo "ERROR: no hay build.gradle en la raiz ni ningun .zip del mod en el repositorio"; exit 1
             fi
@@ -45,15 +53,13 @@ jobs:
           place() {
             if [ -f "$1" ]; then mkdir -p "$2"; mv "$1" "$2/"; echo "movido $1 -> $2/"; fi
           }
-          for f in CorazonDeMelon MelonConfig; do place $f.java $J; done
-          for f in MaoActions MaoBrain MaoIntents MaoItems MaoMods MaoPlaces MaoRoster MaoWork MaoSkills MaoSkillParse MaoBuild MaoPerks; do place $f.java $J/ai; done
-          for f in ClientEvents ClientSetup InnocenceOverlay MaoModel MaoRenderer MelonConfigScreen; do place $f.java $J/client; done
-          place MelonCommands.java $J/command
-          for f in MaoEntity MaoInventory; do place $f.java $J/entity; done
-          for f in HeartSpawner InnocenceEvents MaoBlessings MobReactions; do place $f.java $J/event; done
-          for f in ClientInnocenceData Innocence InnocenceNetwork; do place $f.java $J/innocence; done
-          place HeartItem.java $J/item
-          for f in ModEntities ModItems ModTabs; do place $f.java $J/registry; done
+          for f in *.java; do
+            [ -f "$f" ] || continue
+            PKG=$(grep -m1 '^package ' "$f" | sed 's/^package \([^;]*\);.*/\1/' | tr -d '\r ')
+            if [ -z "$PKG" ]; then echo "ERROR: $f no tiene linea package"; exit 1; fi
+            D="src/main/java/$(echo "$PKG" | tr . /)"
+            mkdir -p "$D"; mv "$f" "$D/"; echo "movido $f -> $D/"
+          done
           place mods.toml src/main/resources/META-INF
           place pack.mcmeta src/main/resources
           place en_us.json $A/lang
